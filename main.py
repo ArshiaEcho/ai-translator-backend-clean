@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Form
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from openai import OpenAI
@@ -43,7 +43,12 @@ def root():
     return {"message": "Welcome to the AI Translator API."}
 
 # --- Clean File Parser ---
-def extract_text(file: UploadFile):
+def extract_text(file: UploadFile) -> str:
+    """Read and extract text from an uploaded file.
+
+    Raises ``HTTPException`` when the file cannot be processed or the type is
+    unsupported.
+    """
     filename = file.filename.lower()
 
     if filename.endswith(".pdf"):
@@ -52,25 +57,34 @@ def extract_text(file: UploadFile):
             doc = fitz.open(stream=pdf_bytes, filetype="pdf")
             text = ""
             for page in doc:
-                # Extract text with more careful handling
                 page_text = page.get_text("text")
-                # Remove non-printable characters
-                page_text = ''.join(char for char in page_text if ord(char) > 31 or char in '\t\n\r')
+                page_text = ''.join(
+                    char for char in page_text if ord(char) > 31 or char in "\t\n\r"
+                )
                 text += page_text + "\n"
             return text
         except Exception as e:
-            return f"Error extracting PDF text: {str(e)}"
+            logger.error(f"PDF extraction failed: {e}")
+            raise HTTPException(status_code=400, detail="Failed to extract text from PDF")
 
     elif filename.endswith(".docx"):
-        contents = BytesIO(file.file.read())
-        doc = docx.Document(contents)
-        return "\n".join([para.text for para in doc.paragraphs])
+        try:
+            contents = BytesIO(file.file.read())
+            doc = docx.Document(contents)
+            return "\n".join([para.text for para in doc.paragraphs])
+        except Exception as e:
+            logger.error(f"DOCX extraction failed: {e}")
+            raise HTTPException(status_code=400, detail="Failed to extract text from DOCX")
 
     elif filename.endswith(".txt"):
-        return file.file.read().decode("utf-8")
+        try:
+            return file.file.read().decode("utf-8")
+        except Exception as e:
+            logger.error(f"Text file read failed: {e}")
+            raise HTTPException(status_code=400, detail="Failed to read text file")
 
     else:
-        return ""
+        raise HTTPException(status_code=415, detail="Unsupported file type")
 
 def sanitize_content(content):
     """Clean and prepare text for AI processing."""
