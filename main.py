@@ -6,19 +6,19 @@ import fitz  # PyMuPDF
 import docx
 import os
 
-# Initialize OpenAI with environment variable
+# Securely initialize OpenAI with environment variable
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 app = FastAPI(
     title="AI Translator API",
-    description="Translate and summarize documents using GPT-4",
+    description="Translate and summarize documents using GPT-4o",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json"
 )
 
-# CORS for frontend/Bolt
+# Enable CORS for frontend integration (e.g., Bolt)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -27,17 +27,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Ping endpoint
+# Health check endpoint
 @app.get("/ping")
 def ping():
     return {"status": "ok", "message": "Translator API is up."}
 
-# Root
+# Root endpoint (optional)
 @app.get("/")
 def root():
     return {"message": "Welcome to the AI Translator API."}
 
-# Text extractor
+# Extract text from supported file formats
 def extract_text(file: UploadFile):
     if file.filename.endswith(".pdf"):
         doc = fitz.open(stream=file.file.read(), filetype="pdf")
@@ -50,6 +50,7 @@ def extract_text(file: UploadFile):
     else:
         return ""
 
+# Core endpoint: Accepts file upload or raw text
 @app.post("/translate")
 async def translate(file: UploadFile = File(None), text: str = Form(None)):
     if file:
@@ -63,9 +64,9 @@ async def translate(file: UploadFile = File(None), text: str = Form(None)):
         return JSONResponse({"error": "Empty or unsupported file."}, status_code=422)
 
     try:
-        # Summary
+        # Use gpt-4o for summary
         summary_resp = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": "Summarize this document in structured bullet points or sections."},
                 {"role": "user", "content": content}
@@ -73,9 +74,9 @@ async def translate(file: UploadFile = File(None), text: str = Form(None)):
         )
         summary = summary_resp.choices[0].message.content
 
-        # Translation
+        # Use gpt-4o for translation
         translation_resp = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": "Translate this document to English."},
                 {"role": "user", "content": content}
