@@ -11,7 +11,7 @@ client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 app = FastAPI(
     title="AI Translator API",
-    description="Translate and summarize documents using GPT-4",
+    description="Translate and summarize documents using GPT-4o",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -35,7 +35,7 @@ def ping():
 def root():
     return {"message": "Welcome to the AI Translator API."}
 
-# Extract plain text from supported file types
+# Text extraction function
 def extract_text(file: UploadFile):
     if file.filename.endswith(".pdf"):
         doc = fitz.open(stream=file.file.read(), filetype="pdf")
@@ -61,38 +61,36 @@ async def translate(file: UploadFile = File(None), text: str = Form(None)):
         return JSONResponse({"error": "Empty or unsupported file."}, status_code=422)
 
     try:
-        # Summary Prompt
-        summary_prompt = (
-            "You are an expert assistant tasked with summarizing official correspondence. "
-            "Read the following message and return a clean, clear markdown-formatted response. "
-            "Structure the output as follows:\n\n"
-            "### Summary (Top of the Response)\n"
-            "A short overview in bullet points.\n\n"
+        prompt = (
+            "You are a professional document assistant. Read the following text and produce a clean, well-organized English translation "
+            "with the following markdown structure:\n\n"
+            "### Summary\n"
+            "- Bullet points summarizing key facts or decisions\n\n"
             "---\n\n"
-            "### Date & Time\n\n"
-            "Extract any date/time and format clearly.\n\n"
+            "### Date & Time\n"
+            "- Clearly format any mentioned dates or times\n\n"
             "### Sender & Recipients\n"
-            "- **Sender**: [Full Name]\n"
-            "- **Recipients**: [List of all]\n\n"
+            "- **Sender**: [Extract from content]\n"
+            "- **Recipients**: [Extract from content]\n\n"
             "### Subject\n"
-            "Pull the subject from the body, if available.\n\n"
-            "### Evaluation / Outcome / Decisions\n"
-            "Separate key sections like evaluation, resolution, closing, and responses.\n\n"
-            "### Original Translation\n"
-            "Include the fully translated version of the message."
+            "- Derive the subject from the context or explicitly state if unclear\n\n"
+            "### Decisions / Outcomes\n"
+            "- List decisions, outcomes, or key actions clearly\n\n"
+            "---\n\n"
+            "### Full English Translation\n"
+            "Include the entire translated body of the document in clear paragraphs."
         )
 
-        # Call to OpenAI
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o",
             messages=[
-                {"role": "system", "content": summary_prompt},
+                {"role": "system", "content": prompt},
                 {"role": "user", "content": content}
             ]
         )
 
-        markdown_result = response.choices[0].message.content.strip()
-        return JSONResponse({"result": markdown_result})
+        result = response.choices[0].message.content.strip()
+        return JSONResponse({"result": result})
 
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
