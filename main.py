@@ -5,9 +5,9 @@ from openai import OpenAI
 import fitz  # PyMuPDF
 import docx
 import os
-import traceback
+from io import BytesIO
 
-# Initialize OpenAI client with environment variable
+# Initialize OpenAI with API key from environment
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 app = FastAPI(
@@ -19,7 +19,7 @@ app = FastAPI(
     openapi_url="/openapi.json"
 )
 
-# Enable CORS for frontend requests
+# CORS for frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -36,25 +36,27 @@ def ping():
 def root():
     return {"message": "Welcome to the AI Translator API."}
 
-# Function to extract clean text from uploaded file
+# --- Clean File Parser ---
 def extract_text(file: UploadFile):
-    try:
-        if file.filename.endswith(".pdf"):
-            pdf_bytes = file.file.read()
-            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-            return "\n".join([page.get_text("text") for page in doc])
-        elif file.filename.endswith(".docx"):
-            doc = docx.Document(file.file)
-            return "\n".join([para.text for para in doc.paragraphs])
-        elif file.filename.endswith(".txt"):
-            return file.file.read().decode("utf-8")
-        else:
-            return ""
-    except Exception as e:
-        print("Error reading file:", e)
-        traceback.print_exc()
+    filename = file.filename.lower()
+
+    if filename.endswith(".pdf"):
+        pdf_bytes = file.file.read()
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        return "\n".join([page.get_text() for page in doc])
+
+    elif filename.endswith(".docx"):
+        contents = BytesIO(file.file.read())
+        doc = docx.Document(contents)
+        return "\n".join([para.text for para in doc.paragraphs])
+
+    elif filename.endswith(".txt"):
+        return file.file.read().decode("utf-8")
+
+    else:
         return ""
 
+# --- Main Translate Route ---
 @app.post("/translate")
 async def translate(file: UploadFile = File(None), text: str = Form(None)):
     if file:
@@ -69,23 +71,22 @@ async def translate(file: UploadFile = File(None), text: str = Form(None)):
 
     try:
         prompt = (
-            "You are a professional document assistant. Read the following text and produce a clean, well-organized English translation "
-            "with the following markdown structure:\n\n"
+            "You are a professional document assistant. Read the following content and return a clean, clear markdown output with:\n\n"
             "### Summary\n"
-            "- Bullet points summarizing key facts or decisions\n\n"
+            "- Bullet point summary of key points\n\n"
             "---\n\n"
             "### Date & Time\n"
-            "- Clearly format any mentioned dates or times\n\n"
+            "- Extract and format any dates/times\n\n"
             "### Sender & Recipients\n"
-            "- **Sender**: [Extracted from content]\n"
-            "- **Recipients**: [Extracted from content]\n\n"
+            "- **Sender**: [Extracted name]\n"
+            "- **Recipients**: [Extracted names]\n\n"
             "### Subject\n"
-            "- Derive the subject from context or explicitly state if unclear\n\n"
+            "- Extracted subject or inferred topic\n\n"
             "### Decisions / Outcomes\n"
-            "- List decisions, resolutions, or important actions\n\n"
+            "- List of decisions, evaluations, or conclusions\n\n"
             "---\n\n"
             "### Full English Translation\n"
-            "Include the full translated document content in clear, natural paragraphs."
+            "The complete translated document, broken into clear paragraphs."
         )
 
         response = client.chat.completions.create(
@@ -96,10 +97,8 @@ async def translate(file: UploadFile = File(None), text: str = Form(None)):
             ]
         )
 
-        output = response.choices[0].message.content.strip()
-        return JSONResponse({"result": output})
+        result = response.choices[0].message.content.strip()
+        return JSONResponse({"result": result})
 
     except Exception as e:
-        print("Translation failed:", e)
-        traceback.print_exc()
-        return JSONResponse({"error": f"Translation failed: {str(e)}"}, status_code=500)
+        return JSONResponse({"error": str(e)}, status_code=500)
