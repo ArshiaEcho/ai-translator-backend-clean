@@ -6,19 +6,19 @@ import fitz  # PyMuPDF
 import docx
 import os
 
-# Securely initialize OpenAI with environment variable
+# Initialize OpenAI with environment variable
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 app = FastAPI(
     title="AI Translator API",
-    description="Translate and summarize documents using GPT-4o",
+    description="Translate and summarize documents using GPT-4",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json"
 )
 
-# Enable CORS for frontend integration (e.g., Bolt)
+# CORS middleware for frontend communication
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -27,17 +27,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Health check endpoint
 @app.get("/ping")
 def ping():
     return {"status": "ok", "message": "Translator API is up."}
 
-# Root endpoint (optional)
 @app.get("/")
 def root():
     return {"message": "Welcome to the AI Translator API."}
 
-# Extract text from supported file formats
+# Extract plain text from supported file types
 def extract_text(file: UploadFile):
     if file.filename.endswith(".pdf"):
         doc = fitz.open(stream=file.file.read(), filetype="pdf")
@@ -50,7 +48,6 @@ def extract_text(file: UploadFile):
     else:
         return ""
 
-# Core endpoint: Accepts file upload or raw text
 @app.post("/translate")
 async def translate(file: UploadFile = File(None), text: str = Form(None)):
     if file:
@@ -64,28 +61,38 @@ async def translate(file: UploadFile = File(None), text: str = Form(None)):
         return JSONResponse({"error": "Empty or unsupported file."}, status_code=422)
 
     try:
-        # Use gpt-4o for summary
-        summary_resp = client.chat.completions.create(
-            model="gpt-4o",
+        # Summary Prompt
+        summary_prompt = (
+            "You are an expert assistant tasked with summarizing official correspondence. "
+            "Read the following message and return a clean, clear markdown-formatted response. "
+            "Structure the output as follows:\n\n"
+            "### Summary (Top of the Response)\n"
+            "A short overview in bullet points.\n\n"
+            "---\n\n"
+            "### Date & Time\n\n"
+            "Extract any date/time and format clearly.\n\n"
+            "### Sender & Recipients\n"
+            "- **Sender**: [Full Name]\n"
+            "- **Recipients**: [List of all]\n\n"
+            "### Subject\n"
+            "Pull the subject from the body, if available.\n\n"
+            "### Evaluation / Outcome / Decisions\n"
+            "Separate key sections like evaluation, resolution, closing, and responses.\n\n"
+            "### Original Translation\n"
+            "Include the fully translated version of the message."
+        )
+
+        # Call to OpenAI
+        response = client.chat.completions.create(
+            model="gpt-4",
             messages=[
-                {"role": "system", "content": "Summarize this document in structured bullet points or sections."},
+                {"role": "system", "content": summary_prompt},
                 {"role": "user", "content": content}
             ]
         )
-        summary = summary_resp.choices[0].message.content
 
-        # Use gpt-4o for translation
-        translation_resp = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "Translate this document to English."},
-                {"role": "user", "content": content}
-            ]
-        )
-        translation = translation_resp.choices[0].message.content
-
-        result = f"### Summary\n\n{summary}\n\n---\n\n### Translation\n\n{translation}"
-        return JSONResponse({"result": result})
+        markdown_result = response.choices[0].message.content.strip()
+        return JSONResponse({"result": markdown_result})
 
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
