@@ -5,7 +5,8 @@ import openai
 import fitz
 import docx
 
-openai.api_key = "your-openai-api-key"
+import os
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 app = FastAPI(
     title="AI Translator API",
